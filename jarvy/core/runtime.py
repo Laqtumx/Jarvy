@@ -13,6 +13,8 @@ from jarvy.memory.tools import build_memory_tools
 from jarvy.safety.audit import AuditLog
 from jarvy.scheduler.store import JobStore
 from jarvy.scheduler.tools import build_scheduler_tools
+from jarvy.tools.integrations.google_auth import GoogleCredentialStore
+from jarvy.tools.integrations.google_workspace import build_google_tools
 from jarvy.tools.system.basic import build_system_tools
 from jarvy.tools.web.browser import build_browser_tools, playwright_available
 from jarvy.tools.web.monitor import MonitorStore, build_monitor_tools
@@ -57,6 +59,10 @@ def build_runtime(
         for tool in build_browser_tools(
             config.data_dir / "browser-profile", config.download_dir
         ).all():
+            tools.register(tool)
+    google_credentials = GoogleCredentialStore()
+    if google_credentials.connected():
+        for tool in build_google_tools(google_credentials).all():
             tools.register(tool)
     if config.gemini_api_key:
         tools.register(

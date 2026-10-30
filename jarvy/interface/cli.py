@@ -6,6 +6,7 @@ import asyncio
 from jarvy.core.config import get_settings
 from jarvy.core.runtime import build_runtime
 from jarvy.scheduler.service import ReminderScheduler
+from jarvy.tools.integrations.google_auth import connect_google
 from jarvy.tools.web.monitor import PageMonitorService
 
 
@@ -57,10 +58,30 @@ async def _chat() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="jarvy", description="Local-first personal assistant")
-    parser.add_argument("command", nargs="?", default="chat", choices=("chat", "serve"))
+    parser.add_argument(
+        "command",
+        nargs="?",
+        default="chat",
+        choices=("chat", "serve", "connect-google", "disconnect-google"),
+    )
+    parser.add_argument("client_secrets_file", nargs="?")
     args = parser.parse_args()
     if args.command == "chat":
         asyncio.run(_chat())
+    elif args.command == "connect-google":
+        if not args.client_secrets_file:
+            parser.error("connect-google requires the path to your OAuth desktop client JSON")
+        connect_google(args.client_secrets_file)
+        print("Google connected. Tokens are stored in the OS keyring.")
+    elif args.command == "disconnect-google":
+        from jarvy.tools.integrations.google_auth import GoogleCredentialStore
+
+        removed = GoogleCredentialStore().delete()
+        print(
+            "Google credentials removed from the OS keyring."
+            if removed
+            else "No Google credentials found."
+        )
     else:
         import uvicorn
 

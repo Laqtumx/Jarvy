@@ -19,11 +19,20 @@ _SENSITIVE_KEYS = {
     "content",
     "message",
     "input",
+    "body",
+    "subject",
+    "snippet",
+    "description",
+    "summary",
 }
+_EXACT_SENSITIVE_KEYS = {"to", "from"}
 
 
 def _redact(value: Any, key: str = "") -> Any:
-    if any(sensitive in key.lower() for sensitive in _SENSITIVE_KEYS):
+    normalized_key = key.lower()
+    if normalized_key in _EXACT_SENSITIVE_KEYS or any(
+        sensitive in normalized_key for sensitive in _SENSITIVE_KEYS
+    ):
         return "[REDACTED]"
     if isinstance(value, dict):
         return {

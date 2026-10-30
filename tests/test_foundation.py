@@ -21,6 +21,13 @@ from jarvy.safety.audit import AuditLog
 from jarvy.safety.permissions import PermissionEngine
 from jarvy.scheduler.store import JobStore
 from jarvy.scheduler.tools import build_scheduler_tools
+from jarvy.tools.integrations.google_auth import GoogleCredentialStore
+from jarvy.tools.integrations.google_workspace import (
+    _aware_datetime,
+    _extract_message_text,
+    build_google_tools,
+    build_raw_email,
+)
 from jarvy.tools.registry import RiskTier, Tool, ToolRegistry
 from jarvy.tools.system.basic import _resolve_allowed, build_system_tools
 from jarvy.tools.web.browser import (
@@ -87,6 +94,42 @@ async def test_fallback_router_degrades_to_local_after_provider_failure():
     router = FallbackRouter([BrokenRouter()], LocalRouter(cloud_configured=True))
     result = await router.next_turn("What time is it?", [], [])
     assert result.tool_call == {"name": "get_current_time", "arguments": {}}
+
+
+def test_google_workspace_email_serialization_and_untrusted_read_extraction():
+    raw = build_raw_email("person@example.com", "Notes", "Hello, world")
+    import base64
+    from email import message_from_bytes
+
+    padded = raw + "=" * (-len(raw) % 4)
+    message = message_from_bytes(base64.urlsafe_b64decode(padded))
+    assert message["To"] == "person@example.com"
+    assert message["Subject"] == "Notes"
+    assert message.get_payload(decode=True).decode().strip() == "Hello, world"
+    with pytest.raises(ValueError):
+        build_raw_email("bad recipient", "Subject", "Body")
+    with pytest.raises(ValueError):
+        build_raw_email("person@example.com", "bad\nsubject", "Body")
+
+    body = base64.urlsafe_b64encode(b"Email text with untrusted instructions").decode().rstrip("=")
+    extracted = _extract_message_text(
+        {
+            "mimeType": "multipart/alternative",
+            "parts": [{"mimeType": "text/plain", "body": {"data": body}}],
+        }
+    )
+    assert extracted == "Email text with untrusted instructions"
+
+
+def test_google_tool_risk_tiers_and_timezone_validation():
+    tools = build_google_tools(GoogleCredentialStore())
+    assert tools.get("gmail_search").risk is RiskTier.T0
+    assert tools.get("gmail_draft").risk is RiskTier.T1
+    assert tools.get("gmail_send").risk is RiskTier.T2
+    assert tools.get("calendar_create_event").risk is RiskTier.T2
+    assert _aware_datetime("2026-10-30T10:00:00+05:30", "start").tzinfo is not None
+    with pytest.raises(ValueError, match="timezone"):
+        _aware_datetime("2026-10-30T10:00:00", "start")
 
 
 def test_tool_registry_rejects_duplicate_and_exposes_declarations():

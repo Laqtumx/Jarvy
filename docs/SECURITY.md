@@ -1,5 +1,7 @@
 # Security model
 
+- Google Workspace OAuth scopes are Gmail read, compose, and send plus Calendar events. Refresh tokens are stored in the OS keyring; plaintext/fail keyring backends are rejected. Gmail send and Calendar event creation are T2; drafts are T1. Revoke consent in the Google account security page and run `jarvy disconnect-google` to remove the local token.
+
 - Tool declarations include explicit risk tiers. T0 is read-only; T1 is bounded reversible work; T2 requires the exact preview string; T3 is denied unconditionally. No T2/T3 tools are shipped yet.
 - Local file tools resolve paths and enforce the allowlist after symlink resolution. Reads have response limits; create refuses to overwrite existing files.
 - Browser and monitor tools permit public HTTP(S) pages only and reject local/private addresses. Monitors fetch bounded HTML/text only and do not access logged-in sessions. Browser clicks and form fills are T2; fills never submit forms. Downloads are capped at 25 MiB, stored under `JARVY_DOWNLOAD_DIR` (inside an allowed directory), and never executed. The persistent browser profile may contain login cookies and stays under `JARVY_DATA_DIR/browser-profile`; use OS-level disk encryption and protect that directory. Application URL checks are defense-in-depth, not a substitute for network egress controls.
