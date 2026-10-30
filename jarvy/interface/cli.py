@@ -5,6 +5,7 @@ import asyncio
 
 from jarvy.core.config import get_settings
 from jarvy.core.runtime import build_runtime
+from jarvy.interface.voice import VoiceInterface
 from jarvy.scheduler.service import ReminderScheduler
 from jarvy.tools.integrations.google_auth import connect_google
 from jarvy.tools.web.monitor import PageMonitorService
@@ -56,13 +57,23 @@ async def _chat() -> None:
     await asyncio.gather(scheduler_task, monitor_task, return_exceptions=True)
 
 
+def _voice() -> None:
+    settings = get_settings()
+    if settings.voice_model_dir is None:
+        raise SystemExit(
+            "Set JARVY_VOSK_MODEL_DIR to your downloaded offline speech-model directory."
+        )
+    agent, _, _, _ = build_runtime(settings)
+    VoiceInterface(agent, settings.voice_model_dir).run()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="jarvy", description="Local-first personal assistant")
     parser.add_argument(
         "command",
         nargs="?",
         default="chat",
-        choices=("chat", "serve", "connect-google", "disconnect-google"),
+        choices=("chat", "serve", "connect-google", "disconnect-google", "voice"),
     )
     parser.add_argument("client_secrets_file", nargs="?")
     args = parser.parse_args()
@@ -82,6 +93,8 @@ def main() -> None:
             if removed
             else "No Google credentials found."
         )
+    elif args.command == "voice":
+        _voice()
     else:
         import uvicorn
 

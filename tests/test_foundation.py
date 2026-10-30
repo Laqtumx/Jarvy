@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from jarvy.brain.router import (
     _openai_messages,
     openai_tool_declarations,
 )
+from jarvy.interface.voice import VoiceInterface, extract_wake_command
 from jarvy.memory.store import MemoryStore
 from jarvy.memory.tools import build_memory_tools
 from jarvy.safety.audit import AuditLog
@@ -173,6 +175,44 @@ async def test_google_drive_create_and_read_use_mocked_google_api():
     assert file_data["text"] == "Exported text"
     with pytest.raises(ValueError, match="Invalid Google Drive file id"):
         await reader.drive_read_text("../private")
+
+
+def test_offline_voice_wake_gate_accepts_only_leading_jarvy():
+    assert extract_wake_command("Jarvy, what time is it?") == "what time is it?"
+    assert extract_wake_command("  JARVY start a timer") == "start a timer"
+    assert extract_wake_command("what time is it, Jarvy?") is None
+    assert extract_wake_command("Jarvy") == ""
+
+
+def test_voice_confirmation_is_bound_to_one_pending_action():
+    class FakeEngine:
+        def __init__(self):
+            self.spoken = []
+
+        def say(self, text):
+            self.spoken.append(text)
+
+        def runAndWait(self):
+            pass
+
+    class FakeAgent:
+        def __init__(self):
+            self.calls = []
+
+        async def run(self, message, approval=None):
+            self.calls.append((message, approval))
+            from jarvy.brain.agent import AgentResult
+
+            return AgentResult("task", "Sent safely.")
+
+    agent = FakeAgent()
+    voice = VoiceInterface(agent, Path("/unused"))
+    voice._pending = ("send the approved mail", "APPROVE: gmail_send(...) ", time.monotonic())
+    engine = FakeEngine()
+    assert voice._handle_command("confirm", engine)
+    assert agent.calls == [("send the approved mail", "APPROVE: gmail_send(...) ")]
+    assert voice._pending is None
+    assert "Sent safely." in engine.spoken
 
 
 def test_tool_registry_rejects_duplicate_and_exposes_declarations():

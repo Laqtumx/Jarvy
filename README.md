@@ -23,6 +23,8 @@ Try `What time is it?` without a key. The built-in reminder form/API works witho
 
 Optional Google Workspace tools provide Gmail search/read/draft/send, primary-calendar event list/create, and Drive search/read-text/create-text. To connect, install `pip install -e '.[integrations]'`, create a Google OAuth **Desktop app** client in Google Cloud with Gmail API and Calendar API enabled, then run `jarvy connect-google /path/to/client_secret.json` and approve the scopes in your browser. Tokens are stored in your OS keyring; `jarvy disconnect-google` removes the local token. Sending mail and creating events require exact-action T2 approval. Live OAuth/API calls need your own client and consent and were not tested in this sandbox.
 
+Offline voice CLI: install `pip install -e '.[voice]'`, install PortAudio on Linux if needed, download and unzip a Vosk speech model, set `JARVY_VOSK_MODEL_DIR` in `.env`, then run `jarvy voice`. It listens locally for a leading “Jarvy”, recognizes speech locally, and uses `pyttsx3` for speech output. Say “Ultron stop” to exit. Grant microphone permission to your OS; the voice pipeline requires a working microphone/speaker and a local Vosk model, so test it on the target machine.
+
 To run the local chat UI and API: `jarvy serve`, then visit `http://127.0.0.1:8000/` (API docs at `/docs`). The UI streams planning and tool-step status over SSE; final model text arrives after the provider finishes. Endpoints include `GET /health`, `POST /chat`, `POST /chat/stream`, and local memory/reminder/page-watch APIs. Do not expose this API to an untrusted network. Docker usage: mount a host directory at `/data`, set `JARVY_ALLOWED_DIRS` to its container path, and pass `GEMINI_API_KEY` and/or `GROQ_API_KEY` as runtime secrets (never bake them into the image).
 
 ## Repository structure
@@ -60,4 +62,4 @@ flowchart LR
   CLI[CLI] --> Memory
 ```
 
-See [docs/SECURITY.md](docs/SECURITY.md) and [docs/TOOL_AUTHORING.md](docs/TOOL_AUTHORING.md). Remaining gaps include voice/wake-word, desktop control, OS notifications, recurring reminders, semantic/vector memory, and production API authentication. Current support and gaps are tracked in `docs/ROADMAP.md`.
+See [docs/SECURITY.md](docs/SECURITY.md) and [docs/TOOL_AUTHORING.md](docs/TOOL_AUTHORING.md). Remaining gaps include desktop control, OS notifications, recurring reminders, semantic/vector memory, and production API authentication. Current support and gaps are tracked in `docs/ROADMAP.md`.

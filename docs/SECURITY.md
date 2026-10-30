@@ -1,5 +1,7 @@
 # Security model
 
+- Voice mode uses local Vosk recognition and local TTS; the microphone remains active until the user exits. Install the optional voice dependencies and download the model from a trusted source. Speech still becomes a text prompt sent to the configured LLM provider, if any. User must grant microphone permission.
+
 - Google Workspace OAuth scopes are Gmail read, compose, and send; Calendar events; Drive readonly search/read; and Drive file access for created text files. Refresh tokens are stored in the OS keyring; plaintext/fail keyring backends are rejected. Gmail send and Calendar event creation are T2; drafts are T1. Revoke consent in the Google account security page and run `jarvy disconnect-google` to remove the local token.
 
 - Tool declarations include explicit risk tiers. T0 is read-only; T1 is bounded reversible work; T2 requires the exact preview string; T3 is denied unconditionally. No T2/T3 tools are shipped yet.

@@ -6,7 +6,7 @@
 - **Phase 3 — chat UI:** same-origin web chat now streams live planning/tool events over SSE, shows step summaries, and offers explicit T2 approval. Provider token streaming, cancel controls, and authenticated remote use remain unimplemented.
 - **Phase 4 — integrations:** initial Google Workspace connector implemented: Gmail search/read/draft/send, primary-calendar list/create, and Drive search/read-text/create-text; OAuth installed-app flow stores tokens in OS keyring. Requires user-created Google OAuth Desktop client, consent, and optional dependencies; Drive update/delete and live provider verification remain.
 - **Phase 5 — scheduler:** persistent one-shot reminders, retries-safe due processing, cancel/list tools, API, and UI notifications are implemented. Cron/recurring schedules, external event triggers, and OS notifications remain unimplemented.
-- **Phase 6 — voice:** not implemented. The mission asks for wake word “Jarvy”; the original phase text says “Ultron.” Jarvy is the product wake phrase when voice arrives.
+- **Phase 6 — voice:** offline CLI prototype implemented with Vosk speech recognition, leading “Jarvy” wake gate, and local `pyttsx3` output. Requires optional packages, a downloaded local model, and microphone/speaker permissions; voice hardware/model execution not tested in this sandbox. Streaming voice, interruption/barge-in, and device-specific packaging remain.
 - **Phase 7 — vision/macros/self-skills:** not implemented.
 - **Phase 8 — eval/hardening:** Unit/integration tests and a 30-scenario deterministic baseline eval exist; provider-backed capability evals, load testing, threat modeling, and production deployment hardening remain.
 

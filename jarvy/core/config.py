@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     download_dir: Path | None = Field(default=None, alias="JARVY_DOWNLOAD_DIR")
     max_steps: int = Field(default=8, ge=1, le=32, alias="JARVY_MAX_STEPS")
     dry_run: bool = Field(default=False, alias="JARVY_DRY_RUN")
+    voice_model_dir: Path | None = Field(default=None, alias="JARVY_VOSK_MODEL_DIR")
     host: str = Field(default="127.0.0.1", alias="JARVY_HOST")
     port: int = Field(default=8000, ge=1, le=65535, alias="JARVY_PORT")
     request_timeout_seconds: float = Field(
@@ -41,6 +42,8 @@ class Settings(BaseSettings):
     def prepare(self) -> None:
         self.data_dir = self.data_dir.expanduser().resolve()
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        if self.voice_model_dir is not None:
+            self.voice_model_dir = self.voice_model_dir.expanduser().resolve()
         self.allowed_dirs = [path.expanduser().resolve() for path in self.allowed_dirs]
         if self.download_dir is None:
             if not self.allowed_dirs:
