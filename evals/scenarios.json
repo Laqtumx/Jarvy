@@ -1,0 +1,212 @@
+[
+  {
+    "id": "local-clock-01",
+    "prompt": "What time is it?",
+    "expected_tools": [
+      "get_current_time"
+    ],
+    "response_contains": "current local time"
+  },
+  {
+    "id": "local-clock-02",
+    "prompt": "Please tell me what time it is right now.",
+    "expected_tools": [
+      "get_current_time"
+    ],
+    "response_contains": "current local time"
+  },
+  {
+    "id": "local-clock-03",
+    "prompt": "Could you check the current time for me?",
+    "expected_tools": [
+      "get_current_time"
+    ],
+    "response_contains": "current local time"
+  },
+  {
+    "id": "local-clock-04",
+    "prompt": "Do you know what time it is?",
+    "expected_tools": [
+      "get_current_time"
+    ],
+    "response_contains": "current local time"
+  },
+  {
+    "id": "local-clock-05",
+    "prompt": "What is the local time?",
+    "expected_tools": [
+      "get_current_time"
+    ],
+    "response_contains": "current local time"
+  },
+  {
+    "id": "local-clock-06",
+    "prompt": "Can you tell me the current time?",
+    "expected_tools": [
+      "get_current_time"
+    ],
+    "response_contains": "current local time"
+  },
+  {
+    "id": "local-clock-07",
+    "prompt": "I need to know what time it is now.",
+    "expected_tools": [
+      "get_current_time"
+    ],
+    "response_contains": "current local time"
+  },
+  {
+    "id": "local-clock-08",
+    "prompt": "Check the current time, please.",
+    "expected_tools": [
+      "get_current_time"
+    ],
+    "response_contains": "current local time"
+  },
+  {
+    "id": "local-clock-09",
+    "prompt": "What time is it where I am?",
+    "expected_tools": [
+      "get_current_time"
+    ],
+    "response_contains": "current local time"
+  },
+  {
+    "id": "local-clock-10",
+    "prompt": "Would you get the current time?",
+    "expected_tools": [
+      "get_current_time"
+    ],
+    "response_contains": "current local time"
+  },
+  {
+    "id": "local-clock-11",
+    "prompt": "Tell me what time it is right now.",
+    "expected_tools": [
+      "get_current_time"
+    ],
+    "response_contains": "current local time"
+  },
+  {
+    "id": "local-clock-12",
+    "prompt": "Can you check the time is it?",
+    "expected_tools": [
+      "get_current_time"
+    ],
+    "response_contains": "current local time"
+  },
+  {
+    "id": "local-clock-13",
+    "prompt": "What time is it at this moment?",
+    "expected_tools": [
+      "get_current_time"
+    ],
+    "response_contains": "current local time"
+  },
+  {
+    "id": "local-clock-14",
+    "prompt": "I wonder what time it is.",
+    "expected_tools": [
+      "get_current_time"
+    ],
+    "response_contains": "current local time"
+  },
+  {
+    "id": "local-clock-15",
+    "prompt": "Please find out the current time.",
+    "expected_tools": [
+      "get_current_time"
+    ],
+    "response_contains": "current local time"
+  },
+  {
+    "id": "no-key-fallback-01",
+    "prompt": "Search my inbox for the flight confirmation.",
+    "expected_tools": [],
+    "response_contains": "Set GEMINI_API_KEY"
+  },
+  {
+    "id": "no-key-fallback-02",
+    "prompt": "Add a meeting to my calendar tomorrow.",
+    "expected_tools": [],
+    "response_contains": "Set GEMINI_API_KEY"
+  },
+  {
+    "id": "no-key-fallback-03",
+    "prompt": "Summarize the latest research on battery recycling.",
+    "expected_tools": [],
+    "response_contains": "Set GEMINI_API_KEY"
+  },
+  {
+    "id": "no-key-fallback-04",
+    "prompt": "Open my downloads folder and find invoices.",
+    "expected_tools": [],
+    "response_contains": "Set GEMINI_API_KEY"
+  },
+  {
+    "id": "no-key-fallback-05",
+    "prompt": "Create a reminder to call my dentist.",
+    "expected_tools": [],
+    "response_contains": "Set GEMINI_API_KEY"
+  },
+  {
+    "id": "no-key-fallback-06",
+    "prompt": "Take a screenshot of my desktop.",
+    "expected_tools": [],
+    "response_contains": "Set GEMINI_API_KEY"
+  },
+  {
+    "id": "no-key-fallback-07",
+    "prompt": "Read my clipboard and summarize it.",
+    "expected_tools": [],
+    "response_contains": "Set GEMINI_API_KEY"
+  },
+  {
+    "id": "no-key-fallback-08",
+    "prompt": "Play my focus playlist.",
+    "expected_tools": [],
+    "response_contains": "Set GEMINI_API_KEY"
+  },
+  {
+    "id": "no-key-fallback-09",
+    "prompt": "Find the cheapest laptop online.",
+    "expected_tools": [],
+    "response_contains": "Set GEMINI_API_KEY"
+  },
+  {
+    "id": "no-key-fallback-10",
+    "prompt": "Draft a reply to my manager.",
+    "expected_tools": [],
+    "response_contains": "Set GEMINI_API_KEY"
+  },
+  {
+    "id": "no-key-fallback-11",
+    "prompt": "Schedule a daily morning briefing.",
+    "expected_tools": [],
+    "response_contains": "Set GEMINI_API_KEY"
+  },
+  {
+    "id": "no-key-fallback-12",
+    "prompt": "Tell me what I asked about last week.",
+    "expected_tools": [],
+    "response_contains": "Set GEMINI_API_KEY"
+  },
+  {
+    "id": "no-key-fallback-13",
+    "prompt": "Translate this document into Spanish.",
+    "expected_tools": [],
+    "response_contains": "Set GEMINI_API_KEY"
+  },
+  {
+    "id": "no-key-fallback-14",
+    "prompt": "Compare these two product listings.",
+    "expected_tools": [],
+    "response_contains": "Set GEMINI_API_KEY"
+  },
+  {
+    "id": "no-key-fallback-15",
+    "prompt": "Turn on Bluetooth on my computer.",
+    "expected_tools": [],
+    "response_contains": "Set GEMINI_API_KEY"
+  }
+]

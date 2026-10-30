@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <title>Jarvy · Personal AI</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #0b1020; color: #edf2ff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(ellipse at 20% 0%, #1d2a49 0, #0b1020 55%); }
+    main { width: min(900px, 100% - 32px); margin: 0 auto; padding: 48px 0; }
+    header { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+    .mark { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; color: #071225; font-weight: 900; background: linear-gradient(135deg, #72e2c4, #83a9ff); }
+    h1 { font-size: 22px; margin: 0; letter-spacing: -.03em; } .subtitle { margin: 4px 0 0; color: #9aa9c6; font-size: 13px; }
+    .badge { margin-left: auto; border: 1px solid #2b3854; padding: 7px 10px; border-radius: 999px; color: #a8b8d5; font-size: 12px; }
+    .panel { border: 1px solid #26324a; border-radius: 18px; background: rgba(16, 24, 42, .88); box-shadow: 0 24px 80px #0004; overflow: hidden; }
+    .messages { min-height: 340px; max-height: 58vh; overflow-y: auto; padding: 22px; display: flex; flex-direction: column; gap: 15px; }
+    .message { max-width: 85%; white-space: pre-wrap; overflow-wrap: anywhere; padding: 13px 15px; border-radius: 14px; line-height: 1.55; font-size: 14px; }
+    .assistant { align-self: flex-start; background: #19243a; border: 1px solid #273550; }
+    .user { align-self: flex-end; background: #d7f7ed; color: #11231f; }
+    .welcome { color: #a8b8d5; font-size: 14px; line-height: 1.7; }
+    .composer { padding: 16px; border-top: 1px solid #26324a; display: flex; gap: 10px; }
+    textarea { flex: 1; resize: vertical; min-height: 48px; max-height: 180px; padding: 13px 14px; border-radius: 12px; border: 1px solid #33415d; background: #0d1526; color: #edf2ff; font: inherit; outline: none; }
+    textarea:focus { border-color: #76d9c1; } button { cursor: pointer; border: 0; border-radius: 12px; padding: 0 19px; font-weight: 700; background: #83e0c6; color: #10211d; }
+    button:disabled { opacity: .55; cursor: wait; }
+    .details { padding: 0 22px 18px; display: grid; gap: 12px; }
+    .card { border: 1px solid #34415c; border-radius: 12px; padding: 14px; background: #121c30; font-size: 13px; }
+    .card h2 { margin: 0 0 8px; font-size: 12px; color: #aec0dc; text-transform: uppercase; letter-spacing: .1em; }
+    .steps { margin: 0; padding-left: 20px; color: #c8d4e9; line-height: 1.7; }
+    .approval { border-color: #a97635; background: #2b2117; }
+    .approval button { padding: 10px 14px; margin-top: 12px; }
+    .notice { margin: 16px 4px 0; color: #8291ad; font-size: 12px; line-height: 1.6; }
+    .reminder-form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid #26324a; flex-wrap: wrap; }
+    .reminder-form input { min-width: 150px; flex: 1; border: 1px solid #33415d; border-radius: 10px; padding: 10px; background: #0d1526; color: #edf2ff; font: inherit; }
+    .reminder-form button { min-height: 40px; }
+    #notifications { display: grid; gap: 8px; margin-bottom: 14px; }
+    .notification { display: flex; align-items: center; gap: 12px; justify-content: space-between; padding: 12px 14px; border-radius: 12px; border: 1px solid #5b775f; background: #17271f; color: #d5f6df; font-size: 13px; }
+    .notification button { padding: 8px 10px; }
+    @media (max-width: 560px) { main { padding-top: 26px; } .messages { min-height: 300px; padding: 15px; } .message { max-width: 95%; } .composer { padding: 12px; } button#send { padding: 0 14px; } .badge { display: none; } }
+  </style>
+</head>
+<body>
+<main>
+  <header><div class="mark">J</div><div><h1>Jarvy</h1><p class="subtitle">Your local-first personal assistant</p></div><span class="badge" id="status">Connecting…</span></header>
+  <section id="notifications" aria-live="polite" aria-label="Due reminders"></section>
+  <section class="panel" aria-label="Jarvy chat">
+    <div class="messages" id="messages" aria-live="polite"><div class="welcome">Ask Jarvy a question. It can use configured tools, and will ask you before any consequential action.</div></div>
+    <div class="details" id="details"></div>
+    <form class="composer" id="composer"><textarea id="prompt" maxlength="12000" placeholder="Message Jarvy…" aria-label="Message Jarvy"></textarea><button id="send" type="submit">Send</button></form>
+    <form class="reminder-form" id="reminder-form" aria-label="Set a reminder">
+      <input id="reminder-message" maxlength="1000" required placeholder="Reminder text" aria-label="Reminder text">
+      <input id="reminder-at" type="datetime-local" required aria-label="Reminder date and time">
+      <button type="submit">Set reminder</button>
+    </form>
+  </section>
+  <p class="notice">Local development UI. Keep the API bound to loopback unless you add authentication and TLS. Gemini prompts and tool results leave your device when cloud reasoning is enabled.</p>
+</main>
+<script>
+  const messages = document.querySelector('#messages');
+  const details = document.querySelector('#details');
+  const form = document.querySelector('#composer');
+  const prompt = document.querySelector('#prompt');
+  const send = document.querySelector('#send');
+  let pending = null;
+  function bubble(text, role) {
+    const item = document.createElement('div'); item.className = `message ${role}`;
+    item.textContent = text; messages.append(item); messages.scrollTop = messages.scrollHeight;
+    return item;
+  }
+  function showResult(result) {
+    bubble(result.response, 'assistant'); details.replaceChildren(); pending = null;
+    if (result.steps?.length) {
+      const card = document.createElement('section'); card.className = 'card';
+      const title = document.createElement('h2'); title.textContent = `Task steps · ${result.task_id}`; card.append(title);
+      const list = document.createElement('ol'); list.className = 'steps';
+      for (const step of result.steps) {
+        const li = document.createElement('li');
+        li.textContent = `${step.tool}: ${step.status}${step.error ? ` — ${step.error}` : ''}`; list.append(li);
+      }
+      card.append(list); details.append(card);
+    }
+    if (result.pending_approval) {
+      pending = result.pending_approval;
+      const card = document.createElement('section'); card.className = 'card approval';
+      const title = document.createElement('h2'); title.textContent = 'Confirmation required'; card.append(title);
+      const body = document.createElement('p'); body.textContent = result.response; card.append(body);
+      const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Approve this exact action';
+      button.addEventListener('click', () => submitMessage(lastPrompt, pending)); card.append(button); details.append(card);
+    }
+  }
+  let lastPrompt = '';
+  async function submitMessage(text, approval = null) {
+    if (!text || send.disabled) return;
+    if (!approval) { lastPrompt = text; bubble(text, 'user'); }
+    send.disabled = true; send.textContent = 'Working…';
+    try {
+      const response = await fetch('/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, approval }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || `Request failed (${response.status})`);
+      showResult(result);
+    } catch (error) { bubble(`Request failed: ${error.message}`, 'assistant'); }
+    finally { send.disabled = false; send.textContent = 'Send'; if (!approval) { prompt.value = ''; prompt.focus(); } }
+  }
+  form.addEventListener('submit', event => { event.preventDefault(); submitMessage(prompt.value.trim()); });
+  prompt.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); form.requestSubmit(); } });
+  const notificationArea = document.querySelector('#notifications');
+  async function refreshNotifications() {
+    try {
+      const response = await fetch('/notifications?unread_only=true');
+      const payload = await response.json();
+      notificationArea.replaceChildren();
+      for (const note of payload.notifications || []) {
+        const item = document.createElement('div'); item.className = 'notification';
+        const text = document.createElement('span'); text.textContent = `Reminder: ${note.message}`; item.append(text);
+        const done = document.createElement('button'); done.type = 'button'; done.textContent = 'Dismiss';
+        done.addEventListener('click', async () => { await fetch(`/notifications/${encodeURIComponent(note.id)}/read`, { method: 'POST' }); refreshNotifications(); });
+        item.append(done); notificationArea.append(item);
+      }
+    } catch (_) { /* Reminder inbox is optional when the API is unavailable. */ }
+  }
+  document.querySelector('#reminder-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const message = document.querySelector('#reminder-message').value.trim();
+    const localDate = document.querySelector('#reminder-at').value;
+    const runAt = new Date(localDate);
+    if (!message || Number.isNaN(runAt.getTime()) || runAt <= new Date()) { alert('Choose a reminder time in the future.'); return; }
+    try {
+      const response = await fetch('/reminders', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, run_at: runAt.toISOString() }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || 'Could not set reminder');
+      bubble(`Reminder set for ${new Date(result.run_at).toLocaleString()}.`, 'assistant');
+      document.querySelector('#reminder-message').value = '';
+    } catch (error) { bubble(`Reminder failed: ${error.message}`, 'assistant'); }
+  });
+  refreshNotifications(); setInterval(refreshNotifications, 5000);
+  fetch('/health').then(response => response.ok ? document.querySelector('#status').textContent = 'Connected' : 'Offline')
+    .catch(() => document.querySelector('#status').textContent = 'Offline');
+</script>
+</body>
+</html>
