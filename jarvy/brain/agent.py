@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -17,6 +19,17 @@ class AgentResult:
     response: str
     steps: list[dict[str, Any]] = field(default_factory=list)
     pending_approval: str | None = None
+
+
+EventSink = Callable[[dict[str, Any]], None | Awaitable[None]]
+
+
+async def _emit(sink: EventSink | None, event: str, **details: Any) -> None:
+    if sink is None:
+        return
+    result = sink({"type": event, **details})
+    if inspect.isawaitable(result):
+        await result
 
 
 class Agent:
@@ -35,12 +48,19 @@ class Agent:
         self.dry_run = dry_run
         self.permissions = PermissionEngine()
 
-    async def run(self, message: str, approval: str | None = None) -> AgentResult:
+    async def run(
+        self,
+        message: str,
+        approval: str | None = None,
+        event_sink: EventSink | None = None,
+    ) -> AgentResult:
         task_id = str(uuid.uuid4())
         history: list[dict[str, Any]] = []
         steps: list[dict[str, Any]] = []
         self.audit.record("task_started", task_id=task_id, input=message)
+        await _emit(event_sink, "task_started", task_id=task_id)
         for index in range(self.max_steps):
+            await _emit(event_sink, "planning", step=index + 1)
             try:
                 turn = await self.router.next_turn(
                     message if index == 0 else None,
@@ -49,6 +69,7 @@ class Agent:
                 )
             except Exception as exc:
                 self.audit.record("model_error", task_id=task_id, error=str(exc))
+                await _emit(event_sink, "model_error", error=str(exc))
                 return AgentResult(task_id, f"The model request failed: {exc}", steps)
             if index == 0:
                 history.append({"role": "user", "parts": [{"text": message}]})
@@ -81,6 +102,7 @@ class Agent:
                 preview = self.permissions.preview(tool, arguments)
                 event = "approval_required" if decision.requires_confirmation else "tool_denied"
                 self.audit.record(event, task_id=task_id, tool=name, arguments=arguments)
+                await _emit(event_sink, event, tool=name, preview=preview)
                 if not decision.requires_confirmation:
                     return AgentResult(task_id, f"Denied: {decision.reason}", steps)
                 return AgentResult(
@@ -96,6 +118,13 @@ class Agent:
                     f"Dry run: would execute {self.permissions.preview(tool, arguments)}",
                     steps,
                 )
+            await _emit(
+                event_sink,
+                "tool_started",
+                step=index + 1,
+                tool=name,
+                risk=tool.risk.name,
+            )
             try:
                 output = await asyncio.wait_for(
                     tool.invoke(arguments), timeout=tool.timeout_seconds + 0.25
@@ -104,6 +133,7 @@ class Agent:
                 self.audit.record(
                     "tool_completed", task_id=task_id, tool=name, arguments=arguments, result=output
                 )
+                await _emit(event_sink, "tool_completed", step=index + 1, tool=name)
                 history.extend(
                     [
                         {
@@ -132,6 +162,7 @@ class Agent:
             except Exception as exc:  # tool failures are contained and reported to the planner
                 step = {"index": index + 1, "tool": name, "status": "error", "error": str(exc)}
                 self.audit.record("tool_failed", task_id=task_id, tool=name, error=str(exc))
+                await _emit(event_sink, "tool_failed", step=index + 1, tool=name, error=str(exc))
                 history.append(
                     {
                         "role": "user",

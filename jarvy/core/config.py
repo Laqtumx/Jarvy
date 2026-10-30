@@ -22,6 +22,7 @@ class Settings(BaseSettings):
         default_factory=lambda: [Path("~/Documents"), Path("~/Downloads")],
         alias="JARVY_ALLOWED_DIRS",
     )
+    download_dir: Path | None = Field(default=None, alias="JARVY_DOWNLOAD_DIR")
     max_steps: int = Field(default=8, ge=1, le=32, alias="JARVY_MAX_STEPS")
     dry_run: bool = Field(default=False, alias="JARVY_DRY_RUN")
     host: str = Field(default="127.0.0.1", alias="JARVY_HOST")
@@ -41,6 +42,17 @@ class Settings(BaseSettings):
         self.data_dir = self.data_dir.expanduser().resolve()
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.allowed_dirs = [path.expanduser().resolve() for path in self.allowed_dirs]
+        if self.download_dir is None:
+            if not self.allowed_dirs:
+                raise ValueError("Configure an allowed directory before enabling downloads")
+            self.download_dir = self.allowed_dirs[-1] / "JarvyDownloads"
+        else:
+            self.download_dir = self.download_dir.expanduser().resolve()
+        if not any(
+            self.download_dir == root or root in self.download_dir.parents
+            for root in self.allowed_dirs
+        ):
+            raise ValueError("JARVY_DOWNLOAD_DIR must be inside a configured allowed directory")
 
 
 @lru_cache(maxsize=1)

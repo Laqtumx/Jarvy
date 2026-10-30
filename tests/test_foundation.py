@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -22,7 +23,17 @@ from jarvy.scheduler.store import JobStore
 from jarvy.scheduler.tools import build_scheduler_tools
 from jarvy.tools.registry import RiskTier, Tool, ToolRegistry
 from jarvy.tools.system.basic import _resolve_allowed, build_system_tools
-from jarvy.tools.web.browser import build_browser_tools, validate_public_url
+from jarvy.tools.web.browser import (
+    build_browser_tools,
+    safe_download_filename,
+    validate_public_url,
+)
+from jarvy.tools.web.monitor import (
+    MonitorStore,
+    build_monitor_tools,
+    extract_page_text,
+    validate_monitor_url,
+)
 from jarvy.tools.web.search import GeminiGroundedSearch, build_search_tool, parse_grounded_response
 
 
@@ -150,6 +161,42 @@ async def test_memory_plugins_persist_recall_and_classify_delete_as_t2(tmp_path:
 
 
 @pytest.mark.asyncio
+async def test_stream_endpoint_emits_live_agent_events_and_final_result(
+    tmp_path: Path, monkeypatch
+):
+    import httpx
+
+    from jarvy.interface import api
+
+    monkeypatch.setattr(
+        api,
+        "agent",
+        Agent(
+            LocalRouter(),
+            build_system_tools([tmp_path]),
+            AuditLog(tmp_path / "stream-audit.jsonl"),
+        ),
+    )
+    monkeypatch.setattr(api, "memory", MemoryStore(tmp_path / "stream-memory.db"))
+    transport = httpx.ASGITransport(app=api.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://jarvy.test") as client:
+        response = await client.post("/chat/stream", json={"message": "What time is it?"})
+    events = [
+        json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")
+    ]
+    assert response.status_code == 200
+    assert "text/event-stream" in response.headers["content-type"]
+    assert {event["type"] for event in events} >= {
+        "task_started",
+        "planning",
+        "tool_started",
+        "tool_completed",
+        "result",
+    }
+    assert events[-1]["response"].lower().startswith("the current local time")
+
+
+@pytest.mark.asyncio
 async def test_local_router_executes_clock_demo_without_api_key(tmp_path: Path):
     agent = Agent(
         LocalRouter(),
@@ -218,6 +265,39 @@ def test_search_plugin_is_read_only_and_rejects_empty_query():
         asyncio.run(GeminiGroundedSearch("key", "model").search("  "))
 
 
+def test_monitor_text_extractor_ignores_scripts_and_tracks_title():
+    title, text = extract_page_text(
+        "<html><title>Release Notes</title><body>Version 1.2"
+        "<script>secret()</script>Stable</body></html>"
+    )
+    assert title == "Release Notes"
+    assert text == "Release Notes Version 1.2 Stable"
+
+
+def test_monitor_store_baselines_then_alerts_on_changed_page(tmp_path: Path):
+    store = MonitorStore(tmp_path / "monitors.db")
+    watch = store.create("https://8.8.8.8/news", interval_seconds=300)
+    due = store.due()
+    assert len(due) == 1
+    assert store.record_success(due[0], "News", "First version") is False
+    baseline = dict(due[0], content_hash=hashlib.sha256(b"First version").hexdigest(), title="News")
+    assert store.record_success(baseline, "News", "Second version") is True
+    alerts = store.alerts()
+    assert len(alerts) == 1 and alerts[0]["url"] == watch["url"]
+    assert store.mark_alert_read(alerts[0]["id"])
+    assert store.alerts() == []
+
+
+def test_monitor_tools_and_url_guard(tmp_path: Path):
+    store = MonitorStore(tmp_path / "monitors.db")
+    tools = build_monitor_tools(store)
+    assert tools.get("watch_page").risk is RiskTier.T1
+    assert tools.get("list_page_watches").risk is RiskTier.T0
+    assert validate_monitor_url("https://8.8.8.8/news") == "https://8.8.8.8/news"
+    with pytest.raises(PermissionError):
+        validate_monitor_url("http://127.0.0.1/private")
+
+
 def test_persistent_reminder_queue_fires_once_and_can_be_cancelled(tmp_path: Path):
     store = JobStore(tmp_path / "jobs.db")
     run_at = datetime.now(UTC) + timedelta(minutes=5)
@@ -270,6 +350,22 @@ def test_browser_tools_assign_read_only_and_confirmed_risks(tmp_path: Path):
     tools = build_browser_tools(tmp_path / "profile")
     assert tools.get("web_open").risk is RiskTier.T0
     assert tools.get("web_click").risk is RiskTier.T2
+    assert tools.get("web_fill").risk is RiskTier.T2
+    assert tools.get("web_download").risk is RiskTier.T1
+
+
+def test_download_filename_is_a_safe_basename():
+    assert safe_download_filename("../../secret.txt") == "secret.txt"
+    assert safe_download_filename("..\\\\..\\\\unsafe.exe") == "unsafe.exe"
+
+
+def test_audit_redacts_user_content_and_form_values(tmp_path: Path):
+    path = tmp_path / "audit.jsonl"
+    audit = AuditLog(path)
+    audit.record("tool", input="private prompt", arguments={"value": "secret form data"})
+    record = json.loads(path.read_text(encoding="utf-8"))
+    assert record["details"]["input"] == "[REDACTED]"
+    assert record["details"]["arguments"]["value"] == "[REDACTED]"
 
 
 def test_read_file_tool_reads_only_allowed_file(tmp_path: Path):
