@@ -23,6 +23,7 @@ from jarvy.scheduler.store import JobStore
 from jarvy.scheduler.tools import build_scheduler_tools
 from jarvy.tools.integrations.google_auth import GoogleCredentialStore
 from jarvy.tools.integrations.google_workspace import (
+    GoogleWorkspace,
     _aware_datetime,
     _extract_message_text,
     build_google_tools,
@@ -127,9 +128,51 @@ def test_google_tool_risk_tiers_and_timezone_validation():
     assert tools.get("gmail_draft").risk is RiskTier.T1
     assert tools.get("gmail_send").risk is RiskTier.T2
     assert tools.get("calendar_create_event").risk is RiskTier.T2
+    assert tools.get("drive_search").risk is RiskTier.T0
+    assert tools.get("drive_create_text").risk is RiskTier.T1
     assert _aware_datetime("2026-10-30T10:00:00+05:30", "start").tzinfo is not None
     with pytest.raises(ValueError, match="timezone"):
         _aware_datetime("2026-10-30T10:00:00", "start")
+
+
+@pytest.mark.asyncio
+async def test_google_drive_create_and_read_use_mocked_google_api():
+    import httpx
+
+    class FakeCredentials:
+        async def access_token(self):
+            return "test-access-token"
+
+    requests = []
+
+    def create_handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={"id": "file_123", "name": "Notes.txt"})
+
+    workspace = GoogleWorkspace(FakeCredentials(), transport=httpx.MockTransport(create_handler))
+    created = await workspace.drive_create_text("Notes.txt", "local file content")
+    assert created["id"] == "file_123"
+    assert "local file content" in requests[0].content.decode()
+    assert requests[0].headers["authorization"] == "Bearer test-access-token"
+    assert "multipart/related" in requests[0].headers["content-type"]
+
+    def read_handler(request):
+        if request.url.path.endswith("/files/file_123"):
+            return httpx.Response(
+                200,
+                json={
+                    "id": "file_123",
+                    "name": "Notes",
+                    "mimeType": "application/vnd.google-apps.document",
+                },
+            )
+        return httpx.Response(200, content=b"Exported text")
+
+    reader = GoogleWorkspace(FakeCredentials(), transport=httpx.MockTransport(read_handler))
+    file_data = await reader.drive_read_text("file_123")
+    assert file_data["text"] == "Exported text"
+    with pytest.raises(ValueError, match="Invalid Google Drive file id"):
+        await reader.drive_read_text("../private")
 
 
 def test_tool_registry_rejects_duplicate_and_exposes_declarations():
