@@ -6,11 +6,13 @@ import asyncio
 from jarvy.core.config import get_settings
 from jarvy.core.runtime import build_runtime
 from jarvy.scheduler.service import ReminderScheduler
+from jarvy.tools.web.monitor import PageMonitorService
 
 
 async def _chat() -> None:
-    agent, memory, jobs = build_runtime()
+    agent, memory, jobs, monitors = build_runtime()
     scheduler_task = asyncio.create_task(ReminderScheduler(jobs).run())
+    monitor_task = asyncio.create_task(PageMonitorService(monitors).run())
     settings = get_settings()
     if settings.gemini_api_key and settings.groq_api_key:
         model_label = "Gemini → Groq fallback"
@@ -48,11 +50,9 @@ async def _chat() -> None:
                 result = await agent.run(prompt, approval=token)
         print(f"Jarvy> {result.response}")
         memory.log_episode(prompt, result.response)
-    scheduler_task.cancel()
-    try:
-        await scheduler_task
-    except asyncio.CancelledError:
-        pass
+    for task in (scheduler_task, monitor_task):
+        task.cancel()
+    await asyncio.gather(scheduler_task, monitor_task, return_exceptions=True)
 
 
 def main() -> None:

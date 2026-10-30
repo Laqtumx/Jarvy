@@ -1,31 +1,34 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from jarvy.core.runtime import build_runtime
 from jarvy.scheduler.service import ReminderScheduler
+from jarvy.tools.web.monitor import PageMonitorService
 
-agent, memory, jobs = build_runtime()
+agent, memory, jobs, monitors = build_runtime()
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    worker = asyncio.create_task(ReminderScheduler(jobs).run())
+    workers = [
+        asyncio.create_task(ReminderScheduler(jobs).run()),
+        asyncio.create_task(PageMonitorService(monitors).run()),
+    ]
     try:
         yield
     finally:
-        worker.cancel()
-        try:
-            await worker
-        except asyncio.CancelledError:
-            pass
+        for worker in workers:
+            worker.cancel()
+        await asyncio.gather(*workers, return_exceptions=True)
 
 
 app = FastAPI(
@@ -44,6 +47,11 @@ class ChatRequest(BaseModel):
 class ReminderRequest(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
     run_at: str = Field(min_length=1, max_length=64)
+
+
+class PageWatchRequest(BaseModel):
+    url: str = Field(min_length=8, max_length=2000)
+    interval_seconds: int = Field(default=900, ge=300, le=86400)
 
 
 @app.get("/", include_in_schema=False)
@@ -68,6 +76,46 @@ async def chat(request: ChatRequest) -> dict[str, object]:
     }
 
 
+@app.post("/chat/stream")
+async def stream_chat(request: ChatRequest) -> StreamingResponse:
+    async def events() -> AsyncIterator[str]:
+        queue: asyncio.Queue[dict[str, object]] = asyncio.Queue()
+
+        def publish(event: dict[str, object]) -> None:
+            queue.put_nowait(event)
+
+        task = asyncio.create_task(
+            agent.run(request.message, approval=request.approval, event_sink=publish)
+        )
+        try:
+            while not task.done() or not queue.empty():
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=12)
+                except TimeoutError:
+                    yield ": keepalive\n\n"
+                    continue
+                yield f"data: {json.dumps(event, ensure_ascii=False, default=str)}\n\n"
+            result = await task
+            memory.log_episode(request.message, result.response)
+            payload = {
+                "type": "result",
+                "task_id": result.task_id,
+                "response": result.response,
+                "steps": result.steps,
+                "pending_approval": result.pending_approval,
+            }
+            yield f"data: {json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
+        except asyncio.CancelledError:
+            task.cancel()
+            raise
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.get("/memory")
 async def list_memory(q: str = "") -> dict[str, object]:
     return {"facts": memory.recall(q)}
@@ -82,6 +130,39 @@ async def put_memory(key: str, body: dict[str, str]) -> dict[str, str]:
 @app.delete("/memory/{key}")
 async def delete_memory(key: str) -> dict[str, object]:
     return {"deleted": memory.forget(key), "key": key}
+
+
+@app.post("/page-watches")
+async def create_page_watch(request: PageWatchRequest) -> dict[str, object]:
+    try:
+        return monitors.create(request.url, request.interval_seconds)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/page-watches")
+async def list_page_watches(include_paused: bool = False) -> dict[str, object]:
+    return {"watches": monitors.list(include_paused=include_paused)}
+
+
+@app.delete("/page-watches/{watch_id}")
+async def pause_page_watch(watch_id: str) -> dict[str, object]:
+    return {"paused": monitors.pause(watch_id), "id": watch_id}
+
+
+@app.get("/page-alerts")
+async def list_page_alerts(unread_only: bool = True, limit: int = 50) -> dict[str, object]:
+    try:
+        return {"alerts": monitors.alerts(unread_only, limit)}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/page-alerts/{alert_id}/read")
+async def mark_page_alert_read(alert_id: str) -> dict[str, object]:
+    return {"marked_read": monitors.mark_alert_read(alert_id), "id": alert_id}
 
 
 @app.post("/reminders")

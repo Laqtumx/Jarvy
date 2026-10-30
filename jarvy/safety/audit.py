@@ -6,7 +6,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-_SENSITIVE_KEYS = {"password", "passwd", "secret", "token", "api_key", "authorization", "cookie"}
+_SENSITIVE_KEYS = {
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "api_key",
+    "authorization",
+    "cookie",
+    "value",
+    "text",
+    "content",
+    "message",
+    "input",
+}
 
 
 def _redact(value: Any, key: str = "") -> Any:

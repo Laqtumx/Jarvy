@@ -32,8 +32,9 @@
     .approval button { padding: 10px 14px; margin-top: 12px; }
     .notice { margin: 16px 4px 0; color: #8291ad; font-size: 12px; line-height: 1.6; }
     .reminder-form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid #26324a; flex-wrap: wrap; }
-    .reminder-form input { min-width: 150px; flex: 1; border: 1px solid #33415d; border-radius: 10px; padding: 10px; background: #0d1526; color: #edf2ff; font: inherit; }
-    .reminder-form button { min-height: 40px; }
+    .reminder-form input, .watch-form input { min-width: 150px; flex: 1; border: 1px solid #33415d; border-radius: 10px; padding: 10px; background: #0d1526; color: #edf2ff; font: inherit; }
+    .reminder-form button, .watch-form button { min-height: 40px; }
+    .watch-form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid #26324a; flex-wrap: wrap; }
     #notifications { display: grid; gap: 8px; margin-bottom: 14px; }
     .notification { display: flex; align-items: center; gap: 12px; justify-content: space-between; padding: 12px 14px; border-radius: 12px; border: 1px solid #5b775f; background: #17271f; color: #d5f6df; font-size: 13px; }
     .notification button { padding: 8px 10px; }
@@ -53,6 +54,11 @@
       <input id="reminder-at" type="datetime-local" required aria-label="Reminder date and time">
       <button type="submit">Set reminder</button>
     </form>
+    <form class="watch-form" id="watch-form" aria-label="Monitor a public web page">
+      <input id="watch-url" type="url" required placeholder="Public page URL to monitor" aria-label="Page URL">
+      <input id="watch-interval" type="number" min="300" max="86400" step="60" value="900" required aria-label="Check interval in seconds">
+      <button type="submit">Watch page</button>
+    </form>
   </section>
   <p class="notice">Local development UI. Keep the API bound to loopback unless you add authentication and TLS. Gemini prompts and tool results leave your device when cloud reasoning is enabled.</p>
 </main>
@@ -68,8 +74,10 @@
     item.textContent = text; messages.append(item); messages.scrollTop = messages.scrollHeight;
     return item;
   }
-  function showResult(result) {
-    bubble(result.response, 'assistant'); details.replaceChildren(); pending = null;
+  function showResult(result, liveBubble = null) {
+    if (liveBubble) liveBubble.textContent = result.response;
+    else bubble(result.response, 'assistant');
+    details.replaceChildren(); pending = null;
     if (result.steps?.length) {
       const card = document.createElement('section'); card.className = 'card';
       const title = document.createElement('h2'); title.textContent = `Task steps · ${result.task_id}`; card.append(title);
@@ -94,13 +102,38 @@
     if (!text || send.disabled) return;
     if (!approval) { lastPrompt = text; bubble(text, 'user'); }
     send.disabled = true; send.textContent = 'Working…';
+    const liveBubble = bubble('Starting Jarvy…', 'assistant');
     try {
-      const response = await fetch('/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      const response = await fetch('/chat/stream', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text, approval }) });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.detail || `Request failed (${response.status})`);
-      showResult(result);
-    } catch (error) { bubble(`Request failed: ${error.message}`, 'assistant'); }
+      if (!response.ok) {
+        const failure = await response.json(); throw new Error(failure.detail || `Request failed (${response.status})`);
+      }
+      if (!response.body) throw new Error('Streaming response is unavailable');
+      const reader = response.body.getReader(); const decoder = new TextDecoder();
+      let buffer = ''; let finalResult = null;
+      const handleBlock = block => {
+        const data = block.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).join('\n');
+        if (!data) return;
+        const event = JSON.parse(data);
+        if (event.type === 'result') { finalResult = event; return; }
+        if (event.type === 'planning') liveBubble.textContent = `Planning step ${event.step}…`;
+        if (event.type === 'tool_started') liveBubble.textContent = `Running ${event.tool} (${event.risk})…`;
+        if (event.type === 'tool_completed') liveBubble.textContent = `Finished ${event.tool}; checking the result…`;
+        if (event.type === 'tool_failed') liveBubble.textContent = `${event.tool} failed; recovering…`;
+        if (event.type === 'approval_required') liveBubble.textContent = `Waiting for approval: ${event.preview}`;
+      };
+      while (true) {
+        const chunk = await reader.read();
+        buffer += decoder.decode(chunk.value || new Uint8Array(), { stream: !chunk.done });
+        const blocks = buffer.split('\n\n'); buffer = blocks.pop() || '';
+        for (const block of blocks) handleBlock(block);
+        if (chunk.done) break;
+      }
+      if (buffer.trim()) handleBlock(buffer);
+      if (!finalResult) throw new Error('Jarvy closed the stream before returning a result');
+      showResult(finalResult, liveBubble);
+    } catch (error) { liveBubble.textContent = `Request failed: ${error.message}`; }
     finally { send.disabled = false; send.textContent = 'Send'; if (!approval) { prompt.value = ''; prompt.focus(); } }
   }
   form.addEventListener('submit', event => { event.preventDefault(); submitMessage(prompt.value.trim()); });
@@ -116,6 +149,15 @@
         const text = document.createElement('span'); text.textContent = `Reminder: ${note.message}`; item.append(text);
         const done = document.createElement('button'); done.type = 'button'; done.textContent = 'Dismiss';
         done.addEventListener('click', async () => { await fetch(`/notifications/${encodeURIComponent(note.id)}/read`, { method: 'POST' }); refreshNotifications(); });
+        item.append(done); notificationArea.append(item);
+      }
+      const watchResponse = await fetch('/page-alerts?unread_only=true');
+      const watchPayload = await watchResponse.json();
+      for (const alert of watchPayload.alerts || []) {
+        const item = document.createElement('div'); item.className = 'notification';
+        const text = document.createElement('span'); text.textContent = `Page changed: ${alert.title || alert.url}`; item.append(text);
+        const done = document.createElement('button'); done.type = 'button'; done.textContent = 'Dismiss';
+        done.addEventListener('click', async () => { await fetch(`/page-alerts/${encodeURIComponent(alert.id)}/read`, { method: 'POST' }); refreshNotifications(); });
         item.append(done); notificationArea.append(item);
       }
     } catch (_) { /* Reminder inbox is optional when the API is unavailable. */ }
@@ -134,6 +176,19 @@
       bubble(`Reminder set for ${new Date(result.run_at).toLocaleString()}.`, 'assistant');
       document.querySelector('#reminder-message').value = '';
     } catch (error) { bubble(`Reminder failed: ${error.message}`, 'assistant'); }
+  });
+  document.querySelector('#watch-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const url = document.querySelector('#watch-url').value.trim();
+    const interval = Number(document.querySelector('#watch-interval').value);
+    try {
+      const response = await fetch('/page-watches', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, interval_seconds: interval }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || 'Could not start page monitor');
+      bubble(`Monitoring ${result.url} every ${result.interval_seconds / 60} minutes.`, 'assistant');
+      document.querySelector('#watch-url').value = '';
+    } catch (error) { bubble(`Monitor failed: ${error.message}`, 'assistant'); }
   });
   refreshNotifications(); setInterval(refreshNotifications, 5000);
   fetch('/health').then(response => response.ok ? document.querySelector('#status').textContent = 'Connected' : 'Offline')
